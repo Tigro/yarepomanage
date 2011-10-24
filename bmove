@@ -1,0 +1,237 @@
+#!/bin/bash
+
+# This is a modified version of bacek's dmove script.
+# It can move deb (binary) packages and source code
+# to testing or stable (all at one, not via testing)
+# repositories.
+
+# This script puts files in <torepo> repository and
+# mini-dinstall automatically reindex all necessary
+# repositories.
+
+# The syntax is similar dmove, but you can define
+# <fromrepo> repository to move files from it.
+# Also you must select branch (repository).
+
+# (c) Arkady L. Shane <ashejn@yandex-team.ru>
+
+# Changelog
+
+# * Tue Jul 22 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - new script bmove based on dmove
+
+# * Wed Jun  4 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - dmove can now work with multiarch repositories.
+# - cleanup and user firendelize messages
+
+# * Tue Feb  4 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fix file detection in changes file
+# - drop manual outut
+
+# * Thu Dec 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - add architecture automatic detection
+# - disable ucopy branch for copying files
+
+# * Thu Sep 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - no more repository with removing stable testing files
+
+# * Mon May 21 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - add rubbish as torepo
+
+# * Tue Mar 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fix arch for i386 and amd64
+
+# * Fri Mar  9 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - adopt dmove to one server
+
+# * Fri Jan 12 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - do not remove old stable o testing packages.
+#   Asked druxa.
+
+# * Tue Nov 28 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - make human notification instead of mv -v
+# - apply check for <fromrepo> repository
+
+# * Mon Nov 27 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fixed source name rule
+
+# * Wed Nov 22 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - optimize find in changes file
+
+# * Mon Nov 13 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - now dmove find source changes file from dpkg -I
+#   information.
+
+# * Thu Nov  9 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - by default packages move to testing from unstable and
+#   to stable from testing.
+ 
+# * Tue Nov  7 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - initial release of new dmove with moving sources
+# - adapting for space
+
+METHOD=$1
+REPO=$2
+TOBRANCH=$3
+PACKAGE=$4
+VERSION=$5
+FROMBRANCH=$6
+DASH="_"
+
+usage()
+{
+echo "Usage bmove <-c|-m> <repo> <tobranch> <package> <version> <frombranch>";
+    echo "      -c - copy";
+    echo "      -m - move";
+    echo "      repo - stable, testing, unstable";
+    echo "      tobranch, frombranch - yandex, market, feeds etc.";
+    exit 1;
+}
+
+bmove()
+{
+    if [ "$METHOD" == "-m" ]; then
+        echo Moving `echo $i | awk -F/ '{print $NF}'` to $NEWDIR/$farch
+        mv -f $i $NEWDIR/$farch;
+    elif [ "$METHOD" == "-c" ]; then
+        echo Copying `echo $i | awk -F/ '{print $NF}'` to $NEWDIR/$farch
+        cp -f $i $NEWDIR/$farch;
+    fi
+}
+
+if [ "$(id -u)" != "0" ]; then
+    echo -e "\nERROR: You should run bmove under superuser root. Abort...\n"
+    exit 1;
+fi
+
+if [ ! -d /repo/$TOBRANCH ]; then
+    echo "Repository $TOBRANCH not found. Abort..."
+    usage
+fi
+
+if [ ! -d /repo/$FROMBRANCH ]; then
+    echo -e "\nERROR: <$TOBRANCH> not found. Abort..."
+    usage
+fi
+
+if [ "x$REPO" != "xstable" -a "x$REPO" != "xtesting" -a \
+    "x$REPO" != "xunstable" ]; then
+    echo -e "\nERROR: <repo> must be stable, testing, or unstable only. Abort...\n";
+    usage
+fi
+
+if [ "x$PACKAGE" == "x" ]; then
+    echo -e "\nERROR: Package is not define. Abort...\n";
+    usage
+fi
+
+if [ "x$VERSION" == "x" ]; then
+    echo -e "\nERROR: Version for package is not define. Abort...\n";
+    usage
+fi
+
+SOURCEDIR="/repo/$FROMBRANCH/$REPO/"
+
+if [ ! -d $SOURCEDIR ]; then
+    echo -e "\nERROR: Repository $SOURCEDIR not found. Abort...\n"
+    exit 1;
+fi
+
+NEWDIR="/repo/$TOBRANCH/$REPO"
+
+echo -e "Processing. Please await...\n"
+
+if [ "$TOBRANCH" == "$FROMBRANCH" ]; then
+    echo -e "\nERROR: Hmm, <tobranch> and <frombranch> could not match\n"
+    exit 1;
+fi
+
+CHECK=$(find $SOURCEDIR -name "$PACKAGE$DASH$VERSION$DASH*.deb" | head -n 1)
+
+if [ ! -z "$CHECK" ]; then
+    SRCNAME=$(dpkg -I $CHECK | awk '/Source:/ {print $2}')
+
+    if [ ! -z "$SRCNAME" ]; then
+        echo -e "WARNING: Hm, you mean $SRCNAME $VERSION...\n";
+    else
+	SRCNAME=$PACKAGE
+    fi
+else
+    SRCNAME=$PACKAGE
+fi
+
+# Detect .changes file
+if [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes";
+elif [ ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+elif [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes $SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+else
+    echo -e "\nFile $SRCNAME$DASH$VERSION$DASH*.changes is absent in $FROMBRANCH\n"
+    exit 1;
+fi
+
+PKG_FILES=$(for files in $CH_FILE; do
+    sed -e '1,/Files:/d;/^$/,$d;/BEGIN PGP SIGNATURE/,$d' $files;
+    done | grep -E "^ " | awk '{ print $NF }' | sort | uniq)
+
+for i in $PKG_FILES; do
+    FP_FILE=$(find $SOURCEDIR -name "$i")
+
+    if [ -z "$FP_FILE" ]; then
+	echo -e "\nERROR: $i not found in $SOURCEDIR."
+	echo -e "Maybe this package is already in stable, testing or rubbish\n"
+	exit 1;
+    else
+	MOVEFILES="$MOVEFILES $FP_FILE"
+    fi
+done
+
+MOVEFILES="$MOVEFILES $CH_FILE"
+
+for i in $MOVEFILES; do
+
+    EXT=$(echo $i | awk -F. '{ print $NF }')
+    PKGNAME=$(echo $i | awk -F_ '{ print $1 }' | awk -F/ '{ print $NF }')
+
+    case "$EXT" in
+	deb)
+	    if [ "$(echo $i | awk -F_ '{ print $NF }')" == "all.deb" ]; then
+		farch=all
+		bmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "i386.deb" ]; then
+		farch=i386
+		bmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "amd64.deb" ]; then
+		farch=amd64
+		bmove
+	    fi
+	    ;;
+	dsc)
+	    farch=source
+	    bmove
+	    ;;
+	gz)
+	    if [ ! -z "$(echo $i |grep ".diff.gz")" ];then 
+		farch=source
+		bmove
+	    elif [ ! -z "$(echo $i |grep ".orig.tar.gz")" ]; then
+		farch=source
+		bmove
+	    else
+	    	farch=source
+		bmove
+	    fi
+	    ;;
+	changes)
+	    farch=""
+	    bmove
+	    ;;
+    esac
+done
+
+echo -e "\nSUCCEED: Mini-dinstall will automatically reindex repositories in some minutes\n"

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+INCOMING="/repo/paysys-rhel/incoming"
+DEST_DIR="/repo/paysys-rhel/5"
+
+find $INCOMING -name "*.src.rpm" -exec mv -v {} $DEST_DIR/SRPMS/ \;
+find $INCOMING -name "*debuginfo*.x86_64.rpm" -exec mv -v {} $DEST_DIR/x86_64/debug/ \;
+find $INCOMING -name "*.x86_64.rpm" -exec mv -v {} $DEST_DIR/x86_64/debug/ \;
+find $INCOMING -name "*debuginfo*.i?86.rpm" -exec mv -v {} $DEST_DIR/i386/debug/ \;
+find $INCOMING -name "*.i?86.rpm" -exec mv -v {} $DEST_DIR/i386/debug/ \;
+for noarch in $(find $INCOMING -name "*.noarch.rpm"); do
+    mv -v $noarch $DEST_DIR/i386/
+    cd $DEST_DIR/x86_64/
+    ln -vf ../i386/$(basename $noarch)
+    cd -
+done
+
+createrepo -d --update $DEST_DIR/SRPMS/ > /dev/null
+createrepo -d --update $DEST_DIR/i386/ > /dev/null
+createrepo -d --update $DEST_DIR/x86_64/ > /dev/null

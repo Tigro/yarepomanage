@@ -1,0 +1,493 @@
+#!/bin/bash
+
+# This is a modified version of bacek's dmove script.
+# It can move deb (binary) packages and source code
+# to testing or stable (all at one, not via testing)
+# repositories.
+
+# This script puts files in <torepo> repository and
+# mini-dinstall automatically reindex all necessary
+# repositories.
+
+# The syntax is similar dmove, but you can define
+# <fromrepo> repository to move files from it.
+# Also you must select branch (repository).
+
+# (c) Arkady L. Shane <ashejn@yandex-team.ru>
+
+# Changelog
+
+# * Mon Jun 28 2010 Arkady L. Shane <ashejn@yandex-team.ru>
+# - Search for " Source:" instead of "Source:" as something
+#   like Svn-Source can be present in changes file
+
+# * Wed Jun  4 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - dmove can now work with multiarch repositories.
+# - cleanup and user firendelize messages
+
+# * Tue Feb  4 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fix file detection in changes file
+# - drop manual outut
+
+# * Thu Dec 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - add architecture automatic detection
+# - disable ucopy branch for copying files
+
+# * Thu Sep 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - no more repository with removing stable testing files
+
+# * Mon May 21 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - add rubbish as torepo
+
+# * Tue Mar 13 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fix arch for i386 and amd64
+
+# * Fri Mar  9 2007 Arkady L. Shane <ashejn@yandex-team.ru>
+# - adopt dmove to one server
+
+# * Fri Jan 12 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - do not remove old stable o testing packages.
+#   Asked druxa.
+
+# * Tue Nov 28 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - make human notification instead of mv -v
+# - apply check for <fromrepo> repository
+
+# * Mon Nov 27 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - fixed source name rule
+
+# * Wed Nov 22 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - optimize find in changes file
+
+# * Mon Nov 13 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - now dmove find source changes file from dpkg -I
+#   information.
+
+# * Thu Nov  9 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - by default packages move to testing from unstable and
+#   to stable from testing.
+ 
+# * Tue Nov  7 2006 Arkady L. Shane <ashejn@yandex-team.ru>
+# - initial release of new dmove with moving sources
+# - adapting for space
+
+   
+
+BRANCH=$1
+SHOTBRANCH="$BRANCH"
+TOREPO=$2
+PACKAGE=$3
+VERSION=$4
+# narN is wrong! And Debian sucks!
+VERSION=$(echo $VERSION | awk -F: '{ print $NF }')
+
+FROMREPO=$5
+DASH="_"
+
+usage()
+{
+    echo "Usage dmove <branch> <torepo> <package> <version> [fromrepo]";
+    echo -e "torepo = unstable | testing | stable | rubbish | prestable | intra\n";
+    echo "branch = "
+    echo "    -am    use [antivirus-maverick]     as branch"
+    echo "    -ah    use [awaps-hardy]            as branch"
+    echo "    -al    use [animals-lucid]          as branch"
+    echo "    -an    use [animals-natty]          as branch"
+    echo "    -ao    use [animals-oneiric]        as branch"
+    echo "    -c     use [common]                 as branch"
+    echo "    -dl    use [direct-lucid]           as branch"
+    echo "    -g     use [graphs]                 as branch"
+    echo "    -f     use [feeds]                  as branch"
+    echo "    -f64   use [feeds-amd64]            as branch"
+    echo "    -fu    use [fubuntu]                as branch"
+    echo "    -fu64  use [fubuntu-amd64]          as branch"
+    echo "    -tj    use [tojetstyle]             as branch"
+    echo "    -tt    use [totadatuta]             as branch"
+    echo "    -fj    use [fromjetstyle]           as branch"
+    echo "    -ft    use [fromtadatuta]           as branch"
+    echo "    -m     use [mail]                   as branch"
+    echo "    -me    use [mail-etch]              as branch"
+    echo "    -mb    use [mail-etch-boost]        as branch"
+    echo "    -a     use [market]                 as branch"
+    echo "    -a64   use [market-amd64]           as branch"
+    echo "    -g64   use [market-gutsy-amd64]     as branch"
+    echo "    -mh    use [morda-hardy]            as branch"
+    echo "    -ml    use [morda-lucid]            as branch"
+    echo "    -n     use [narod]                  as branch"
+    echo "    -s     use [passport]               as branch"
+    echo "    -sh    use [passport-hardy]         as branch"
+    echo "    -ph    use [paysys-hardy]           as branch"
+    echo "    -p     use [photo]                  as branch"
+    echo "    -po    use [portal-outsource]       as branch"
+    echo "    -b     use [pythonbp]               as branch"
+    echo "    -yabs  use [yabs-hardy]             as branch"
+    echo "    -y3    use [yandex3]                as branch" 
+    echo "    -y     use [yandex]                 as branch"
+    echo "    -y64   use [yandex-amd64]           as branch"
+    echo "    -l     use [yandex-etch]            as branch"
+    echo "    -lp    use [yandex-etch-stlpdebug]  as branch"
+    echo "    -yh    use [yandex-hardy]           as branch"
+    echo "    -yj    use [yandex-jaunty]          as branch"
+    echo "    -yl    use [yandex-lenny]           as branch"
+    echo "    -ys    use [yandex-sarge]           as branch"
+    echo "    -ylu   use [yandex-lucid]           as branch"
+    echo "    -yn    use [yandex-natty]           as branch"
+    echo "    -ym    use [yandex-maverick]        as branch"
+    echo "    -ysq   use [yandex-squeeze]         as branch"
+    echo "    -v     use [yatube]                 as branch"
+    echo "    -q     use [yandex-qa]              as branch"
+    echo "    -w     use [verstka]                as branch"
+    echo
+    exit 1;
+}
+
+dmove()
+{
+    if [ $FROMREPO == "ucopy" ]; then
+        echo Copying `echo $i | awk -F/ '{print $NF}'` to $NEWDIR/$farch
+        cp -f $i $NEWDIR/$farch;
+    else
+        echo Moving `echo $i | awk -F/ '{print $NF}'` to $NEWDIR/$farch
+        mv -f $i $NEWDIR/$farch;
+    fi
+}
+
+if [ "$(id -u)" != "0" ]; then
+    echo -e "\nERROR: You should run dmove under superuser root. Abort...\n"
+    exit 1;
+fi
+
+case "$BRANCH" in
+    -ah)
+    	BRANCH="awaps-hardy";
+	;;
+    -am)
+    	BRANCH="antivirus-maverick";
+        ;;
+    -al)
+    	BRANCH="animals-lucid";
+        ;;
+    -an)
+        BRANCH="animals-natty";
+        ;;
+    -ao)
+        BRANCH="animals-oneric";
+        ;;
+    -c)
+    	BRANCH="common";
+	;;
+    -dl)
+        BRANCH="direct-lucid";
+        ;;
+    -g)
+    	BRANCH="graphs";
+	;;
+
+    -f)
+        BRANCH="feeds";
+	;;
+    -f64)
+        BRANCH="feeds-amd64";
+	;;
+    -p)
+        BRANCH="photo";
+	;;
+    -po)
+        BRANCH="portal-outsource";
+	;;
+    -m)
+	BRANCH="mail";
+	;;
+    -me)
+	BRANCH="mail-etch";
+	;;
+    -mb)
+        BRANCH="mail-etch-boost";
+        ;;
+    -y3)
+	BRANCH="yandex3";]
+	;;
+    -s)
+	BRANCH="passport";
+	;;
+    -sh)
+        BRANCH="passport-hardy";
+        ;;
+    -ph)
+        BRANCH="paysys-hardy";
+        ;;
+    -y)
+	BRANCH="yandex";
+	;;
+    -b)
+	BRANCH="pythonbp";
+	;;
+    -a)
+	BRANCH="market";
+	;;
+    -a64)
+	BRANCH="market-amd64";
+	;;
+    -g64)
+	BRANCH="market-gutsy-amd64";
+	;;
+    -mh)
+        BRANCH="morda-hardy"
+        ;;
+    -ml)
+        BRANCH="morda-lucid"
+        ;;
+    -v)
+	BRANCH="yatube";
+	;;
+    -l)
+	BRANCH="yandex-etch";
+	;;
+    -lp)
+	BRANCH="yandex-etch-stlpdebug";
+	;;
+    -y64)
+	BRANCH="yandex-amd64";
+	;;
+    -yabs)
+	BRANCH="yabs-hardy";
+	;;
+    -fu)
+	BRANCH="fubuntu";
+	;;
+    -fu64)
+	BRANCH="fubuntu-amd64";
+	;;
+    -tj)
+        BRANCH="tojetstyle"
+	;;
+    -tt)
+        BRANCH="totadatuta"
+	;;
+    -fj)
+        BRANCH="fromjetstyle"
+	;;
+    -ft)
+        BRANCH="fromtadatuta"
+	;;
+    -n)
+	BRANCH="narod";
+	;;
+    -q)
+        BRANCH="yandex-qa";
+        ;;
+    -w)
+	BRANCH="verstka";
+	;;
+    -yl)
+	BRANCH="yandex-lenny";
+	;;
+    -ys)
+        BRANCH="yandex-sarge";
+        ;;
+    -yh)
+	BRANCH="yandex-hardy";
+	;;
+    -ym)
+	BRANCH="yandex-maverick";
+	;;
+    -ysq)
+        BRANCH="yandex-squeeze";
+        ;;
+    -yj)
+	BRANCH="yandex-jaunty";
+	;;
+    -ylu)
+	BRANCH="yandex-lucid";
+        ;;
+    -yn)
+        BRANCH="yandex-natty";
+        ;;
+    *)
+	echo -e "\nERROR: You must select branch. Abort...\n"
+	usage
+	;;
+esac
+
+if [ "x$TOREPO" != "xstable" -a "x$TOREPO" != "xtesting" -a \
+    "x$TOREPO" != "xtesting-prep2remove" -a "x$TOREPO" != "xstable-prep2remove" -a \
+    "x$TOREPO" != "xprestable-prep2remove" -a "x$TOREPO" != "xunstable-prep2remove" -a \
+    "x$TOREPO" != "xunstable" -a "x$TOREPO" != "xrubbish" -a "x$TOREPO" != "xprestable" -a "x$TOREPO" != "xintra" ]; then
+    echo -e "\nERROR: Destination must be testing, stable or rubbish only. Abort...\n";
+    usage
+fi
+
+if [ "x$PACKAGE" == "x" ]; then
+    echo -e "\nERROR: Package is not define. Abort...\n";
+    usage
+fi
+
+if [ "x$VERSION" == "x" ]; then
+    echo -e "\nERROR: Version for package is not define. Abort...\n";
+    usage
+fi
+
+if [ "x$FROMREPO" == "x" -a "$TOREPO" == "stable" ]; then
+    FROMREPO="testing"
+    echo -e "\nWARNING: Source repository is not define, using $FROMREPO by default"
+elif [ "x$FROMREPO" == "x" -a "$TOREPO" == "testing" ]; then
+    FROMREPO="unstable"
+    echo -e "\nWARNING: Source repository is not define, using $FROMREPO by default"
+elif [ "x$FROMREPO" != "xstable" -a "x$FROMREPO" != "xunstable" \
+    -a "x$FROMREPO" != "xtesting" -a "x$FROMREPO" != "xrubbish" \
+    -a "x$FROMREPO" != "xtesting-prep2remove" -a "x$FROMREPO" != "xstable-prep2remove" \
+    -a "x$FROMREPO" != "xprestable-prep2remove" -a "x$FROMREPO" != "xunstable-prep2remove" \
+    -a "x$FROMREPO" != "xucopy" -a "x$FROMREPO" != "xprestable" -a "x$FROMREPO" != "xintra" ]; then
+    echo -e "\nERROR: Unknown <fromrepo> repository. Abort...\n"
+    usage
+fi
+
+SOURCEDIR="/repo/$BRANCH/$FROMREPO/"
+
+if [ ! -d $SOURCEDIR ]; then
+    echo -e "\nERROR: Repository $SOURCEDIR not found. Abort...\n"
+    exit 1;
+fi
+
+NEWDIR="/repo/$BRANCH/$TOREPO/"
+
+echo -e "Processing. Please await...\n"
+
+if [ "$TOREPO" == "$FROMREPO" ]; then
+    echo -e "\nERROR: Hmm, <torepo> and <fromrepo> could not match\n"
+    exit 1;
+fi
+
+CHECK=$(find $SOURCEDIR -name "$PACKAGE$DASH$VERSION$DASH*.deb" | head -n 1)
+
+if [ -z "$CHECK" ]; then
+    CHECK=$(find $NEWDIR -name "$PACKAGE$DASH$VERSION$DASH*.deb" | head -n 1)
+fi
+
+if [ ! -z "$CHECK" ]; then
+    SRCNAME=$(dpkg -I $CHECK | awk '/^ Source:/ {print $2}')
+
+    if [ ! -z "$SRCNAME" ]; then
+        echo -e "WARNING: Hm, you mean $SRCNAME $VERSION...\n";
+    else
+	SRCNAME=$PACKAGE
+    fi
+else
+    SRCNAME=$PACKAGE
+fi
+
+# Detect .changes file
+if [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes";
+elif [ ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+elif [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes $SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+elif [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}all.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}all.changes";
+else
+    echo -e "\nFile $SRCNAME$DASH$VERSION$DASH*.changes is absent in $FROMREPO\n"
+    echo -en "Searching in $TOREPO...     "
+
+    if [ -f "$NEWDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -o \
+         -f "$NEWDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+         echo -e "found\n"
+         echo "File $SRCNAME$DASH$VERSION$DASH*.changes already in $TOREPO"
+         exit 0;
+    else
+        echo -e "not found\n"
+        echo "File $SRCNAME$DASH$VERSION$DASH*.changes is absent in $TOREPO too."
+        exit 1;
+    fi
+fi
+
+PKG_FILES=$(for files in $CH_FILE; do
+    sed -e '1,/Files:/d;/^$/,$d;/BEGIN PGP SIGNATURE/,$d' $files;
+    done | grep -E "^ " | awk '{ print $NF }' | sort | uniq)
+
+for i in $PKG_FILES; do
+    FP_FILE=$(find $SOURCEDIR -name "$i")
+
+    if [ -z "$FP_FILE" ]; then
+	echo -e "\nERROR: $i not found in $SOURCEDIR."
+	echo -e "Maybe this package is already in stable, testing or rubbish\n"
+	exit 1;
+    else
+	MOVEFILES="$MOVEFILES $FP_FILE"
+    fi
+done
+
+MOVEFILES="$MOVEFILES $CH_FILE"
+
+for i in $MOVEFILES; do
+
+    EXT=$(echo $i | awk -F. '{ print $NF }')
+    PKGNAME=$(echo $i | awk -F_ '{ print $1 }' | awk -F/ '{ print $NF }')
+
+    case "$EXT" in
+	deb)
+	    if [ "$(echo $i | awk -F_ '{ print $NF }')" == "all.deb" ]; then
+		farch=all
+		dmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "i386.deb" ]; then
+		farch=i386
+		dmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "amd64.deb" ]; then
+		farch=amd64
+		dmove
+	    fi
+	    ;;
+	udeb)
+            if [ "$(echo $i | awk -F_ '{ print $NF }')" == "all.udeb" ]; then
+                farch=all
+                dmove
+            elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "i386.udeb" ]; then
+                farch=i386
+                dmove
+            elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "amd64.udeb" ]; then
+                farch=amd64
+                dmove
+            fi
+           ;;
+	dsc)
+	    farch=source
+	    dmove
+	    ;;
+	gz)
+	    if [ ! -z "$(echo $i |grep ".diff.gz")" ];then 
+		farch=source
+		dmove
+	    elif [ ! -z "$(echo $i |grep ".orig.tar.gz")" ]; then
+		farch=source
+		dmove
+	    else
+	    	farch=source
+		dmove
+	    fi
+	    ;;
+	bz2)
+	    if [ ! -z "$(echo $i |grep ".diff.bz2")" ];then 
+		farch=source
+		dmove
+	    elif [ ! -z "$(echo $i |grep ".orig.tar.bz2")" ]; then
+		farch=source
+		dmove
+	    else
+	    	farch=source
+		dmove
+	    fi
+	    ;;
+	changes)
+	    farch=""
+	    dmove
+	    ;;
+    esac
+done
+
+echo -e "\nSUCCEED: Mini-dinstall will automatically reindex repositories in some seconds\n"
+
+#echo -e "\nGo to Remnant:"
+#ssh remnant.yandex.ru "/usr/sbin/dmove $SHOTBRANCH $TOREPO $PACKAGE $VERSION $FROMREPO"

@@ -1,0 +1,312 @@
+#!/bin/bash
+
+# This is a modified version of bacek's rmove script.
+# It can move deb (binary) packages and source code
+# to testing or stable (all at one, not via testing)
+# repositories.
+
+# This script puts files in <torepo> repository and
+# mini-dinstall automatically reindex all necessary
+# repositories.
+
+# The syntax is similar rmove, but you can define
+# <fromrepo> repository to move files from it.
+# Also you must select branch (repository).
+
+# (c) Arkady L. Shane <ashejn@yandex-team.ru>
+
+# Changelog
+
+# * Thu Jul 10 2008 Arkady L. Shane <ashejn@yandex-team.ru>
+# - adopt rmove to removing packages. Named as rmove.
+
+BRANCH=$1
+REPO=$2
+PACKAGE=$3
+VERSION=$4
+DASH="_"
+
+usage()
+{
+    echo "Usage rmove <branch> <repo> <package> <version>";
+    echo -e "repo = unstable | testing | stable | rubbish\n";
+    echo "branch = "
+    echo "    -ah    use [awaps-hardy]        as branch"
+    echo "    -c     use [common]             as branch"
+    echo "    -f     use [feeds]              as branch"
+    echo "    -f64   use [feeds-amd64]        as branch"
+    echo "    -fu    use [fubuntu]            as branch"
+    echo "    -fu64  use [fubuntu-amd64]      as branch"
+    echo "    -m     use [mail]               as branch"
+    echo "    -me    use [mail-etch]          as branch"
+    echo "    -mb    use [mail-etch-boost]    as branch"
+    echo "    -a     use [market]             as branch"
+    echo "    -a64   use [market-amd64]       as branch"
+    echo "    -g64   use [market-gutsy-amd64] as branch"
+    echo "    -n     use [narod]              as branch"
+    echo "    -s     use [passport]           as branch"
+    echo "    -sh    use [passport-hardy]     as branch"
+    echo "    -p     use [photo]              as branch"
+    echo "    -b     use [pythonbp]           as branch"
+    echo "    -sy    use [system]             as branch"
+    echo "    -yabs  use [yabs-hardy]         as branch"
+    echo "    -y3    use [yandex3]            as branch" 
+    echo "    -y     use [yandex]             as branch"
+    echo "    -y64   use [yandex-amd64]       as branch"
+    echo "    -l     use [yandex-etch]        as branch"
+    echo "    -ld    use [yandex-etch-stlp]   as branch"
+    echo "    -yh    use [yandex-hardy]       as branch"
+    echo "    -yhc   use [yandex-hardy-icc]   as branch"
+    echo "    -ylu   use [yandex-lucid]       as branch"
+    echo "    -yj    use [yandex-jaunty]      as branch"
+    echo "    -yl    use [yandex-lenny]       as branch"
+    echo "    -ys    use [yandex-sarge]       as branch"
+    echo "    -yqa   use [yandex-qa]          as branch"
+    echo "    -v     use [yatube]             as branch"
+    echo "    -w     use [verstka]            as branch"
+    echo
+    exit 1;
+}
+
+rmove()
+{
+    echo Removing `echo $i | awk -F/ '{print $NF}'`;
+    rm -f $i;
+}
+
+if [ "$(id -u)" != "0" ]; then
+    echo -e "\nERROR: You should run rmove under superuser root. Abort...\n"
+    exit 1;
+fi
+
+case "$BRANCH" in
+    -ah)
+    	BRANCH="awaps-hardy";
+	;;
+    -c)
+    	BRANCH="common";
+	;;
+    -f)
+        BRANCH="feeds";
+	;;
+    -f64)
+        BRANCH="feeds-amd64";
+	;;
+    -p)
+        BRANCH="photo";
+	;;
+    -m)
+	BRANCH="mail";
+	;;
+    -me)
+	BRANCH="mail-etch";
+	;;
+    -mb)
+        BRANCH="mail-etch-boost";
+        ;;
+    -y3)
+	BRANCH="yandex3";]
+	;;
+    -s)
+	BRANCH="passport";
+	;;
+    -sh)
+        BRANCH="passport-hardy";
+	;;
+    -sy)
+	BRANCH="system"
+        ;;
+    -y)
+	BRANCH="yandex";
+	;;
+    -b)
+	BRANCH="pythonbp";
+	;;
+    -a)
+	BRANCH="market";
+	;;
+    -a64)
+	BRANCH="market-amd64";
+	;;
+    -g64)
+	BRANCH="market-gutsy-amd64";
+	;;
+    -v)
+	BRANCH="yatube";
+	;;
+    -l)
+	BRANCH="yandex-etch";
+	;;
+    -ld)
+        BRANCH="yandex-etch-stlpdebug"
+        ;;
+    -y64)
+	BRANCH="yandex-amd64";
+	;;
+    -yabs)
+	BRANCH="yabs-hardy";
+	;;
+    -fu)
+	BRANCH="fubuntu";
+	;;
+    -fu64)
+	BRANCH="fubuntu-amd64";
+	;;
+    -n)
+	BRANCH="narod";
+	;;
+    -w)
+	BRANCH="verstka";
+	;;
+    -yl)
+	BRANCH="yandex-lenny";
+	;;
+    -ys)
+        BRANCH="yandex-sarge";
+        ;;
+    -yqa)
+        BRANCH="yandex-qa";
+        ;;
+    -yh)
+	BRANCH="yandex-hardy";
+	;;
+    -yhc)
+        BRANCH="yandex-hardy-icc";
+        ;;
+    -ylu)
+        BRANCH="yandex-lucid";
+	;;
+    -yj)
+	BRANCH="yandex-jaunty";
+	;;
+    *)
+	echo -e "\nERROR: You must select branch. Abort...\n"
+	usage
+	;;
+esac
+
+if [ "x$BRANCH" == "xsystem" ]; then
+    if [ "x$REPO" != "xhardy" -a "x$REPO" != "xlenny" -a \
+        "x$REPO" != "xconfigs" -a "x$REPO" != "xfeisty" -a \
+        "x$REPO" != "xgutsy" -a "x$REPO" != "xintrepid" -a \
+        "x$REPO" != "xjaunty" -a "x$REPO" != "xlucid" -a \
+        "x$REPO" != "xsarge" -a "x$REPO" != "xetch" ]; then
+        echo -e "\nERROR: Unknown repository. Abort...\n";
+        usage
+    fi
+else
+    if [ "x$REPO" != "xstable" -a "x$REPO" != "xtesting" -a "x$REPO" != "xprestable" -a \
+        "x$REPO" != "xunstable" -a "x$REPO" != "xrubbish" ]; then
+        echo -e "\nERROR: Unknown repository. Abort...\n";
+        usage
+    fi
+fi
+
+if [ "x$PACKAGE" == "x" ]; then
+    echo -e "\nERROR: Package is not define. Abort...\n";
+    usage
+fi
+
+if [ "x$VERSION" == "x" ]; then
+    echo -e "\nERROR: Version for package is not define. Abort...\n";
+    usage
+fi
+
+SOURCEDIR="/repo/$BRANCH/$REPO/"
+
+if [ ! -d $SOURCEDIR ]; then
+    echo -e "\nERROR: Repository $SOURCEDIR not found. Abort...\n"
+    exit 1;
+fi
+
+echo -e "Processing. Please await...\n"
+
+CHECK=$(find $SOURCEDIR -name "$PACKAGE$DASH$VERSION$DASH*.deb" | head -n 1)
+
+if [ ! -z "$CHECK" ]; then
+    SRCNAME=$(dpkg -I $CHECK | awk '/ Source:/ {print $2}')
+
+    if [ ! -z "$SRCNAME" ]; then
+        echo -e "WARNING: Hm, you mean $SRCNAME $VERSION...\n";
+    else
+	SRCNAME=$PACKAGE
+    fi
+else
+    SRCNAME=$PACKAGE
+fi
+
+# Detect .changes file
+if [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes";
+elif [ ! -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+elif [ -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes" -a \
+    -f "$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes" ]; then
+    CH_FILE="$SOURCEDIR$SRCNAME$DASH$VERSION${DASH}i386.changes $SOURCEDIR$SRCNAME$DASH$VERSION${DASH}amd64.changes";
+else
+    echo -e "\nFile $SRCNAME$DASH$VERSION$DASH*.changes is absent in $REPO\n"
+    exit 1;
+fi
+
+PKG_FILES=$(for files in $CH_FILE; do
+    sed -e '1,/Files:/d;/^$/,$d;/BEGIN PGP SIGNATURE/,$d' $files;
+    done | grep -E "^ " | awk '{ print $NF }' | sort | uniq)
+
+for i in $PKG_FILES; do
+    FP_FILE=$(find $SOURCEDIR -name "$i")
+
+    if [ -z "$FP_FILE" ]; then
+	echo -e "\nERROR: $i not found in $SOURCEDIR."
+	echo -e "Maybe this package is already in stable, testing or rubbish\n"
+	exit 1;
+    else
+	MOVEFILES="$MOVEFILES $FP_FILE"
+    fi
+done
+
+MOVEFILES="$MOVEFILES $CH_FILE"
+
+for i in $MOVEFILES; do
+
+    EXT=$(echo $i | awk -F. '{ print $NF }')
+    PKGNAME=$(echo $i | awk -F_ '{ print $1 }' | awk -F/ '{ print $NF }')
+
+    case "$EXT" in
+	deb)
+	    if [ "$(echo $i | awk -F_ '{ print $NF }')" == "all.deb" ]; then
+		farch=all
+		rmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "i386.deb" ]; then
+		farch=i386
+		rmove
+	    elif [ "$(echo $i | awk -F_ '{ print $NF }')" == "amd64.deb" ]; then
+		farch=amd64
+		rmove
+	    fi
+	    ;;
+	dsc)
+	    farch=source
+	    rmove
+	    ;;
+	gz)
+	    if [ ! -z "$(echo $i |grep ".diff.gz")" ];then 
+		farch=source
+		rmove
+	    elif [ ! -z "$(echo $i |grep ".orig.tar.gz")" ]; then
+		farch=source
+		rmove
+	    else
+	    	farch=source
+		rmove
+	    fi
+	    ;;
+	changes)
+	    farch=""
+	    rmove
+	    ;;
+    esac
+done
+
+echo -e "\nSUCCEED: Mini-dinstall will automatically reindex repositories in some minutes\n"

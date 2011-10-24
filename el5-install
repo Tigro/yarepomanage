@@ -1,0 +1,51 @@
+#!/bin/sh
+
+REPO=$1
+
+usage()
+{
+    echo
+    echo "Usage: el5-install <repo>"
+    echo "    repo = common | mail | moikrug | paysys"
+    echo
+    exit 1;
+}
+
+
+if [ "$(id -u)" != "0" ]; then
+    echo "You must be superuser root. Abort..."
+    usage
+fi
+
+if [ "$REPO" != "common" -a "$REPO" != "mail" -a "$REPO" != "moikrug" -a "$REPO" != "paysys" ]; then
+    echo "Repo must be mail or moikrug only. Abort..."
+    usage
+fi
+
+INCOMING="/repo/epel/5/incoming/$REPO"
+DEST_DIR="/repo/epel/5/$REPO"
+
+find $INCOMING -name "*.rpm" -exec chmod 644 {} \;
+find $INCOMING -name "*.src.rpm" -exec mv -v {} $DEST_DIR/SRPMS/ \;
+find $INCOMING -name "*debuginfo*.x86_64.rpm" -exec mv -v {} $DEST_DIR/x86_64/debug/ \;
+find $INCOMING -name "*.x86_64.rpm" -exec mv -v {} $DEST_DIR/x86_64/ \;
+find $INCOMING -name "*debuginfo*.i?86.rpm" -exec mv -v {} $DEST_DIR/i386/debug/ \;
+find $INCOMING -name "*.i?86.rpm" -exec mv -v {} $DEST_DIR/i386/ \;
+for noarch in $(find $INCOMING -name "*.noarch.rpm"); do
+    mv -v $noarch $DEST_DIR/i386/
+    cd $DEST_DIR/x86_64/
+    ln -vf ../i386/$(basename $noarch)
+    cd -
+done
+
+createrepo -d --update $DEST_DIR/SRPMS/ > /dev/null
+createrepo -d --update $DEST_DIR/i386/debug/ > /dev/null
+createrepo -d --update $DEST_DIR/x86_64/debug/ > /dev/null
+
+pushd $DEST_DIR/i386/ > /dev/null
+createrepo -d --update $(ls debug/*.rpm | sed 's!debug!-x debug!') . > /dev/null
+popd > /dev/null
+
+pushd $DEST_DIR/x86_64/ > /dev/null
+createrepo -d --update $(ls debug/*.rpm | sed 's!debug!-x debug!') . > /dev/null
+popd > /dev/null
